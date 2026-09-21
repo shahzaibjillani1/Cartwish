@@ -13,6 +13,10 @@ const swaggerDocument = {
   },
   servers: [
     {
+      url: "/",
+      description: "Current Server (Production / Local)",
+    },
+    {
       url: "http://localhost:3000",
       description: "Local Development Server",
     },
@@ -627,12 +631,28 @@ const swaggerDocument = {
   },
 };
 
+const CSS_URL = "https://cdnjs.cloudflare.com/ajax/libs/swagger-ui/5.0.0/swagger-ui.min.css";
+const JS_URLS = [
+  "https://cdnjs.cloudflare.com/ajax/libs/swagger-ui/5.0.0/swagger-ui-bundle.js",
+  "https://cdnjs.cloudflare.com/ajax/libs/swagger-ui/5.0.0/swagger-ui-standalone-preset.js",
+];
+
+const swaggerOptions = {
+  customCssUrl: CSS_URL,
+  customJs: JS_URLS,
+  customSiteTitle: "CartWish API Documentation",
+};
+
 const setupSwagger = (app) => {
   // Support multiple route aliases for Swagger UI
   const swaggerRoutes = ["/swagger", "/swagger-ui", "/docs", "/api-docs"];
-  
+
+  // Specifically handle the /swagger/api-docs path from the user's browser/Vercel URL
+  app.get("/swagger/api-docs", (req, res) => res.redirect("/api-docs/"));
+  app.get("/swagger/api-docs/", (req, res) => res.redirect("/api-docs/"));
+
   swaggerRoutes.forEach((route) => {
-    app.use(route, swaggerUi.serve, swaggerUi.setup(swaggerDocument));
+    app.use(route, swaggerUi.serve, swaggerUi.setup(swaggerDocument, swaggerOptions));
   });
 
   // Redirect root /swagger to /swagger/

@@ -8,9 +8,19 @@ const Product = require("../models/product");
 const Category = require("../models/category");
 const router = express.Router();
 
+const uploadDirectory = process.env.VERCEL
+  ? path.join("/tmp", "uploads/products")
+  : "uploads/products";
+
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
-    cb(null, "uploads/products");
+    try {
+      const fsSync = require("fs");
+      if (!fsSync.existsSync(uploadDirectory)) {
+        fsSync.mkdirSync(uploadDirectory, { recursive: true });
+      }
+    } catch (err) {}
+    cb(null, uploadDirectory);
   },
   filename: (req, file, cb) => {
     const timeStamp = Date.now();

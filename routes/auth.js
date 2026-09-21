@@ -4,20 +4,38 @@ const passport = require("passport");
 const User = require("../models/users");
 const jwt = require("jsonwebtoken");
 
+const clientRedirectUrl = (token) => {
+  const baseUrl = process.env.CLIENT_URL || "http://localhost:3000";
+  return `${baseUrl.replace(/\/$/, "")}/login?token=${token}`;
+};
+
 // Google Login
-router.get("/google", passport.authenticate("google", { scope: ["email", "profile"] }));
+router.get("/google", (req, res, next) => {
+  if (!process.env.GOOGLE_CLIENT_ID || !process.env.GOOGLE_CLIENT_SECRET) {
+    return res.status(503).json({
+      message:
+        "Google OAuth is not configured on this server. Please set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET.",
+    });
+  }
+  passport.authenticate("google", { scope: ["email", "profile"] })(req, res, next);
+});
 
 router.get(
   "/google/callback",
-  passport.authenticate("google", {
-    session: false,
-    failureRedirect: "/login",
-  }),
+  (req, res, next) => {
+    if (!process.env.GOOGLE_CLIENT_ID || !process.env.GOOGLE_CLIENT_SECRET) {
+      return res.status(503).json({ message: "Google OAuth is not configured." });
+    }
+    passport.authenticate("google", {
+      session: false,
+      failureRedirect: "/login",
+    })(req, res, next);
+  },
   async (req, res) => {
     try {
       const profile = req.user;
       const token = await handleOAuthCallback(profile, "googleId");
-      res.redirect(`http://localhost:3000/login?token=${token}`);
+      res.redirect(clientRedirectUrl(token));
     } catch (err) {
       console.error("Google Auth Error:", err);
       res.status(500).json({ message: "Google Auth Failed" });
@@ -26,19 +44,32 @@ router.get(
 );
 
 // Facebook Login
-router.get("/facebook", passport.authenticate("facebook", { scope: ["public_profile", "email"] }));
+router.get("/facebook", (req, res, next) => {
+  if (!process.env.FACEBOOK_APP_ID || !process.env.FACEBOOK_APP_SECRET) {
+    return res.status(503).json({
+      message:
+        "Facebook OAuth is not configured on this server. Please set FACEBOOK_APP_ID and FACEBOOK_APP_SECRET.",
+    });
+  }
+  passport.authenticate("facebook", { scope: ["public_profile", "email"] })(req, res, next);
+});
 
 router.get(
   "/facebook/callback",
-  passport.authenticate("facebook", {
-    session: false,
-    failureRedirect: "/login",
-  }),
+  (req, res, next) => {
+    if (!process.env.FACEBOOK_APP_ID || !process.env.FACEBOOK_APP_SECRET) {
+      return res.status(503).json({ message: "Facebook OAuth is not configured." });
+    }
+    passport.authenticate("facebook", {
+      session: false,
+      failureRedirect: "/login",
+    })(req, res, next);
+  },
   async (req, res) => {
     try {
       const profile = req.user;
       const token = await handleOAuthCallback(profile, "facebookId");
-      res.redirect(`http://localhost:3000/login?token=${token}`);
+      res.redirect(clientRedirectUrl(token));
     } catch (err) {
       console.error("Facebook Auth Error:", err);
       res.status(500).json({ message: "Facebook Auth Failed" });

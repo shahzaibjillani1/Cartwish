@@ -7,9 +7,19 @@ const Category = require("../models/category");
 const checkRole = require("../middleware/checkRole");
 const authMiddleware = require("../middleware/authmiddleware");
 
+const uploadDirectory = process.env.VERCEL
+  ? path.join("/tmp", "uploads/category")
+  : "uploads/category";
+
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
-    cb(null, "uploads/category");
+    try {
+      const fsSync = require("fs");
+      if (!fsSync.existsSync(uploadDirectory)) {
+        fsSync.mkdirSync(uploadDirectory, { recursive: true });
+      }
+    } catch (err) {}
+    cb(null, uploadDirectory);
   },
   filename: (req, file, cb) => {
     const timeStamp = Date.now();
