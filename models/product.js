@@ -1,56 +1,67 @@
-
 const mongoose = require("mongoose");
 
-const productSchema = new mongoose.Schema({
+const reviewSchema = new mongoose.Schema({
+  user: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: "user",
+    required: true,
+  },
+  rating: {
+    type: Number,
+    required: true,
+    min: 1,
+    max: 5,
+  },
+  comment: {
+    type: String,
+    required: true,
+  },
+  createdAt: {
+    type: Date,
+    default: Date.now,
+  },
+});
+
+const productSchema = new mongoose.Schema(
+  {
     title: {
-        type: String,
-        required: true,
-        maxlength: 100
+      type: String,
+      required: true,
+      maxlength: 100,
+      trim: true,
     },
     description: {
-        type: String,
-        required: true,
-        minlength: 50
+      type: String,
+      required: true,
+      minlength: 10,
     },
     seller: {
-        type: mongoose.Schema.Types.ObjectId,
-        ref: "user",
-        required: true
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "user",
+      required: true,
     },
     category: {
-        type: mongoose.Schema.Types.ObjectId,
-        ref: "Category",
-        required: true
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Category",
+      required: true,
     },
     price: {
-        type: Number,
-        required: true,
-        min: 0
+      type: Number,
+      required: true,
+      min: 0,
     },
     stock: {
-        type: Number,
-        required: true,
-        min: 0
+      type: Number,
+      required: true,
+      min: 0,
     },
     images: {
-        type: [String],
-        required: true
+      type: [String],
+      required: true,
     },
-    review: {
-        user: {
-            type: mongoose.Schema.Types.ObjectId,
-            ref: "user",
-            required: false
-        },
-        rating: {
-            type: Number,
-            required: false,
-            min: 0,
-        },
-        comment: {
-            type: String,
-        }
-    }
-});
+    reviews: [reviewSchema],
+  },
+  { timestamps: true }
+);
 
 module.exports = mongoose.model("Product", productSchema);

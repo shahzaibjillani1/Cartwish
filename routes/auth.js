@@ -14,9 +14,14 @@ router.get(
     failureRedirect: "/login",
   }),
   async (req, res) => {
-    const profile = req.user;
-    const token = await handleOAuthCallback(profile, "googleId");
-    res.redirect(`http://localhost:3000/login?token=${token}`);
+    try {
+      const profile = req.user;
+      const token = await handleOAuthCallback(profile, "googleId");
+      res.redirect(`http://localhost:3000/login?token=${token}`);
+    } catch (err) {
+      console.error("Google Auth Error:", err);
+      res.status(500).json({ message: "Google Auth Failed" });
+    }
   }
 );
 
@@ -30,16 +35,25 @@ router.get(
     failureRedirect: "/login",
   }),
   async (req, res) => {
-    const profile = req.user;
-    const token = await handleOAuthCallback(profile, "facebookId");
-    res.redirect(`http://localhost:3000/login?token=${token}`);
+    try {
+      const profile = req.user;
+      const token = await handleOAuthCallback(profile, "facebookId");
+      res.redirect(`http://localhost:3000/login?token=${token}`);
+    } catch (err) {
+      console.error("Facebook Auth Error:", err);
+      res.status(500).json({ message: "Facebook Auth Failed" });
+    }
   }
 );
 
 // Reusable function for Google & Facebook
 const handleOAuthCallback = async (profile, providerId) => {
+  const email = profile.emails?.[0]?.value || profile.email;
   let user = await User.findOne({
-    $or: [{ email: profile.emails?.[0]?.value }, { [providerId]: profile.id }],
+    $or: [
+      ...(email ? [{ email: email.toLowerCase() }] : []),
+      { [providerId]: profile.id },
+    ],
   });
 
   if (user) {
@@ -49,9 +63,10 @@ const handleOAuthCallback = async (profile, providerId) => {
     }
   } else {
     user = new User({
-      username: profile.displayName,
-      email: profile.emails?.[0]?.value, // handle missing email safely
+      username: profile.displayName || profile.name?.givenName || "OAuthUser",
+      email: email ? email.toLowerCase() : `${profile.id}@oauth.user`,
       [providerId]: profile.id,
+      roles: ["user"],
     });
     await user.save();
   }

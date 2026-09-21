@@ -5,9 +5,7 @@ const multer = require("multer");
 const fs = require("fs/promises");
 const path = require("path");
 const Product = require("../models/product");
-const User = require("../models/users");
 const Category = require("../models/category");
-const product = require("../models/product");
 const router = express.Router();
 
 const storage = multer.diskStorage({
@@ -29,9 +27,7 @@ const fileFilter = (req, file, cb) => {
     cb(null, true);
   } else {
     cb(
-      new Error(
-        "Invalid file type. Only JPEG, JPG, and PNG images are allowed."
-      ),
+      new Error("Invalid file type. Only JPEG, JPG, and PNG images are allowed."),
       false
     );
   }
@@ -43,83 +39,117 @@ const upload = multer({
   limits: { fileSize: 1024 * 1024 * 5 },
 });
 
-router.get('/suggestions', async (req, res) => {
-  const search = req.query.search;
-  const products = await Product.find(
-    { title: { $regex: search, $options: 'i' } },
-  ).select("_id title").limit(10);
+// GET search suggestions
+router.get("/suggestions", async (req, res) => {
+  try {
+    const search = req.query.search;
+    if (!search || typeof search !== "string" || search.trim() === "") {
+      return res.json([]);
+    }
 
-  res.json(products);
+    const safeSearch = search.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const products = await Product.find({
+      title: { $regex: safeSearch, $options: "i" },
+    })
+      .select("_id title")
+      .limit(10);
+
+    res.json(products);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
 });
+
+// POST create new product (Seller or Admin)
 router.post(
   "/",
   authMiddleware,
-  checkRole("seller"),
+  checkRole(["seller", "admin"]),
   upload.array("images", 8),
   async (req, res) => {
-    const { title, description, category, price, stock } = req.body;
-    const images = req.files.map((file) => file.filename);
+    try {
+      const { title, description, category, price, stock } = req.body;
 
-    if (images.length == 0) {
-      return res
-        .status(400)
-        .json({ message: "At least one image is required" });
+      if (!title || !description || !category || price === undefined || stock === undefined) {
+        return res.status(400).json({ message: "All product fields are required" });
+      }
+
+      const existingCategory = await Category.findById(category);
+      if (!existingCategory) {
+        return res.status(404).json({ message: "Category not found" });
+      }
+
+      const files = req.files || [];
+      if (files.length === 0) {
+        return res.status(400).json({ message: "At least one image is required" });
+      }
+
+      const images = files.map((file) => file.filename);
+
+      const newProduct = new Product({
+        title,
+        description,
+        category,
+        price: Number(price),
+        stock: Number(stock),
+        images,
+        seller: req.user._id,
+      });
+
+      await newProduct.save();
+
+      res.status(201).json({
+        message: "Product created successfully",
+        product: newProduct,
+      });
+    } catch (err) {
+      res.status(500).json({ message: err.message });
     }
-
-    const newProduct = new Product({
-      title,
-      description,
-      category,
-      price,
-      stock,
-      images,
-      seller: req.user._id,
-    });
-    await newProduct.save();
-
-    res.status(201).json({
-      message: "Product created successfully",
-      product: newProduct,
-    });
   }
 );
 
+// GET all products with filtering & pagination
 router.get("/", async (req, res) => {
+  try {
     const page = parseInt(req.query.page) || 1;
     const perPage = parseInt(req.query.perPage) || 8;
     const querySearch = req.query.search || "";
     let query = {};
-    if (req.query.category) {
-      const category = await Category.findOne({ name: req.query.category });
 
-      if (!category) {
+    if (req.query.category) {
+      const categoryDoc = await Category.findOne({
+        $or: [{ name: req.query.category }, { _id: req.query.category.match(/^[0-9a-fA-F]{24}$/) ? req.query.category : null }],
+      });
+
+      if (!categoryDoc) {
         return res.status(404).json({ message: "Category not found" });
       }
-      query.category = category._id;
+      query.category = categoryDoc._id;
     }
+
     if (querySearch) {
-      query.title = { $regex: querySearch, $options: "i" };
+      const safeSearch = querySearch.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      query.title = { $regex: safeSearch, $options: "i" };
     }
 
     const products = await Product.find(query)
-      .select("-description -category -seller -__v")
+      .populate("category", "_id name")
       .skip((page - 1) * perPage)
       .limit(perPage)
       .lean();
 
-    const updatedProducts = products.map((product) => {
-      const numberOfReviews = product.review?.length || 0;
-      const sumOfRatings =
-        product.review?.reduce((total, review) => total + review.rating, 0) ||
-        0;
+    const updatedProducts = products.map((prod) => {
+      const reviews = prod.reviews || [];
+      const numberOfReviews = reviews.length;
+      const sumOfRatings = reviews.reduce((total, r) => total + r.rating, 0);
 
       return {
-        ...product,
-        images: product.images[0],
-        reviews: {
+        ...prod,
+        firstImage: prod.images ? prod.images[0] : null,
+        reviewsSummary: {
           numberOfReviews,
           averageRating:
-            numberOfReviews > 0 ? sumOfRatings / numberOfReviews : 0,
+            numberOfReviews > 0 ? parseFloat((sumOfRatings / numberOfReviews).toFixed(1)) : 0,
         },
       };
     });
@@ -134,44 +164,183 @@ router.get("/", async (req, res) => {
       currentPage: page,
       perPage,
     });
-
-});
-
-router.get("/:id", async (req, res) => {
-  const id = req.params.id;
-
-  const product = await Product.findById(id)
-    .populate("seller", "_id username email")
-    .populate("review.user", "_id username email")
-    .select("-category -__v").lean();
-
-  if (!product) {
-    return res.status(404).json({ message: "Product not found" });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
   }
-
-  res.json(product);
 });
 
-router.delete("/:id", authMiddleware, checkRole("admin"), async (req, res) => {
+// GET single product by ID
+router.get("/:id", async (req, res) => {
+  try {
     const id = req.params.id;
 
-    const product = await Product.findById(id);
+    const product = await Product.findById(id)
+      .populate("seller", "_id username email")
+      .populate("category", "_id name")
+      .populate("reviews.user", "_id username email")
+      .lean();
+
     if (!product) {
       return res.status(404).json({ message: "Product not found" });
     }
 
-    if (product.images && product.images.length > 0) {
-      for (const image of product.images) {
-        const fullPath = path.join(__dirname, "../uploads/products", image);
-        console.log("Deleting:", fullPath);
+    const reviews = product.reviews || [];
+    const numberOfReviews = reviews.length;
+    const sumOfRatings = reviews.reduce((total, r) => total + r.rating, 0);
+    const averageRating =
+      numberOfReviews > 0 ? parseFloat((sumOfRatings / numberOfReviews).toFixed(1)) : 0;
 
-          await fs.unlink(fullPath);
-      }
+    res.json({
+      ...product,
+      averageRating,
+      numberOfReviews,
+    });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+// POST review on product
+router.post("/:id/review", authMiddleware, async (req, res) => {
+  try {
+    const { rating, comment } = req.body;
+
+    if (!rating || !comment) {
+      return res.status(400).json({ message: "Rating and comment are required" });
     }
 
-    await Product.findByIdAndDelete(id);
+    const numRating = Number(rating);
+    if (isNaN(numRating) || numRating < 1 || numRating > 5) {
+      return res.status(400).json({ message: "Rating must be a number between 1 and 5" });
+    }
 
-    res.status(200).json({ message: "Product deleted successfully" });
+    const product = await Product.findById(req.params.id);
+    if (!product) {
+      return res.status(404).json({ message: "Product not found" });
+    }
+
+    // Check if user already reviewed
+    const existingReviewIndex = product.reviews.findIndex(
+      (r) => r.user.toString() === req.user._id.toString()
+    );
+
+    if (existingReviewIndex !== -1) {
+      // Update review
+      product.reviews[existingReviewIndex].rating = numRating;
+      product.reviews[existingReviewIndex].comment = comment;
+      product.reviews[existingReviewIndex].createdAt = new Date();
+    } else {
+      // Add review
+      product.reviews.push({
+        user: req.user._id,
+        rating: numRating,
+        comment,
+      });
+    }
+
+    await product.save();
+
+    res.status(200).json({
+      message: "Review added/updated successfully",
+      reviews: product.reviews,
+    });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
 });
+
+// PUT update product (Seller or Admin)
+router.put(
+  "/:id",
+  authMiddleware,
+  checkRole(["seller", "admin"]),
+  upload.array("images", 8),
+  async (req, res) => {
+    try {
+      const product = await Product.findById(req.params.id);
+      if (!product) {
+        return res.status(404).json({ message: "Product not found" });
+      }
+
+      // Check ownership unless admin
+      if (!req.user.roles.includes("admin") && product.seller.toString() !== req.user._id.toString()) {
+        return res.status(403).json({ message: "You can only edit your own products" });
+      }
+
+      const { title, description, category, price, stock } = req.body;
+
+      if (title) product.title = title;
+      if (description) product.description = description;
+      if (category) product.category = category;
+      if (price !== undefined) product.price = Number(price);
+      if (stock !== undefined) product.stock = Number(stock);
+
+      if (req.files && req.files.length > 0) {
+        // Replace images with new files
+        const newImages = req.files.map((f) => f.filename);
+
+        // Delete old image files
+        for (const oldImg of product.images) {
+          const fullPath = path.join(__dirname, "../uploads/products", oldImg);
+          try {
+            await fs.unlink(fullPath);
+          } catch (e) {
+            // Ignore missing files
+          }
+        }
+
+        product.images = newImages;
+      }
+
+      await product.save();
+
+      res.status(200).json({
+        message: "Product updated successfully",
+        product,
+      });
+    } catch (err) {
+      res.status(500).json({ message: err.message });
+    }
+  }
+);
+
+// DELETE product (Seller or Admin)
+router.delete(
+  "/:id",
+  authMiddleware,
+  checkRole(["seller", "admin"]),
+  async (req, res) => {
+    try {
+      const id = req.params.id;
+
+      const product = await Product.findById(id);
+      if (!product) {
+        return res.status(404).json({ message: "Product not found" });
+      }
+
+      // Check ownership unless admin
+      if (!req.user.roles.includes("admin") && product.seller.toString() !== req.user._id.toString()) {
+        return res.status(403).json({ message: "You can only delete your own products" });
+      }
+
+      if (product.images && product.images.length > 0) {
+        for (const image of product.images) {
+          const fullPath = path.join(__dirname, "../uploads/products", image);
+          try {
+            await fs.unlink(fullPath);
+          } catch (e) {
+            // Ignore missing files
+          }
+        }
+      }
+
+      await Product.findByIdAndDelete(id);
+
+      res.status(200).json({ message: "Product deleted successfully" });
+    } catch (err) {
+      res.status(500).json({ message: err.message });
+    }
+  }
+);
 
 module.exports = router;

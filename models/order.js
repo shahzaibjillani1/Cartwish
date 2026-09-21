@@ -1,73 +1,71 @@
-const { required } = require("joi");
 const mongoose = require("mongoose");
 
-const orderSchema = new mongoose.Schema({
+const orderSchema = new mongoose.Schema(
+  {
     user: {
-            type: mongoose.Schema.Types.ObjectId,
-            ref: "user",
-            required: true
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "user",
+      required: true,
+    },
+    products: [
+      {
+        productId: {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: "Product",
+          required: true,
         },
-        products: [
-            {
-                productId: {
-                    type: mongoose.Schema.Types.ObjectId,
-                    ref: "product",
-                    required: true
-                },
-                quantity: {
-                    type: Number,
-                    min: 1,
-                    default: 1,
-                    required: true
-                },
-                title: {
-                    type: String,
-                    required: true
-                },
-                price: {
-                    type: Number,
-                    required: true
-                },
-                image: {
-                    type: String,
-                    required: true
-                },
-            }
-        ],
-        totalProducts: {
-            type: Number,
-            default: 0
+        quantity: {
+          type: Number,
+          min: 1,
+          default: 1,
+          required: true,
         },
-        totalPrice: {
-            type: Number,
-            default: 0
+        title: {
+          type: String,
+          required: true,
         },
-        shippingAddress: {
-            type: String,
-            required: true
+        price: {
+          type: Number,
+          required: true,
         },
-        paymentId: {
-            type: String,
-            required: true
+        image: {
+          type: String,
+          required: true,
         },
-        Paymentstatus: {
-            type: String,
-            required: true
-        },
-        orderStatus: {
-            type: String,
-            enum: ["pending", "processing", "shipped", "delivered"],
-            default: "pending"
-        },
-        createdAt: {
-            type: Date,
-            default: Date.now
-        },
-        deliveredAt: {
-            type: Date,
-        }
-
-});
+      },
+    ],
+    totalProducts: {
+      type: Number,
+      default: 0,
+    },
+    totalPrice: {
+      type: Number,
+      default: 0,
+    },
+    shippingAddress: {
+      type: String,
+      required: true,
+    },
+    paymentId: {
+      type: String,
+      default: "PAYMENT_PENDING",
+    },
+    paymentStatus: {
+      type: String,
+      enum: ["pending", "completed", "failed"],
+      default: "pending",
+    },
+    orderStatus: {
+      type: String,
+      enum: ["pending", "processing", "shipped", "delivered", "cancelled"],
+      default: "pending",
+    },
+    deliveredAt: {
+      type: Date,
+    },
+  },
+  { timestamps: true }
+);
 
 const Order = mongoose.model("Order", orderSchema);
 module.exports = Order;
